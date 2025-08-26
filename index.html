@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的地圖</title>
+    <style>
+        body {
+    margin: 0;
+    padding: 0;
+}
+.input-container {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background-color: white;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+}
+#address-input {
+    width: 250px;
+    height: 150px;
+    resize: none;
+    border: 1px solid #ccc;
+    padding: 8px;
+    border-radius: 4px;
+}
+button {
+    width: 100%;
+    padding: 10px;
+    margin-top: 10px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+button:hover {
+    background-color: #45a049;
+}
+        /* 這邊是用來設定地圖的大小和樣式 */
+        #map {
+            height: 100vh; /* 讓地圖佔滿整個瀏覽器的高度 */
+            width: 100vw;  /* 讓地圖佔滿整個瀏覽器的寬度 */
+        }
+    </style>
+</head>
+<body>
+    <div class="input-container">
+    <textarea id="address-input" placeholder="請在此貼上地址，每行一個。"></textarea>
+    <button onclick="processAddresses()">標註地址</button>
+</div>  
+    <div id="map"></div>
+
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAWX7_NCCMQ2jx-XEGHMQ0zB-g6qFv2i6U&callback=initMap">
+    </script>
+    
+<script>
+    // -------------------------------------------------------------------
+    // 1. 全域變數和資料庫載入
+    // -------------------------------------------------------------------
+
+    let geocoder;
+    let map;
+    let markers = []; // 用來存放所有標記點
+    let addressToNameDB = {};
+    const SPREADSHEET_URL = 'https://script.google.com/macros/s/AKfycbxqoQXrF_yKIR31OQRbuZS1em718O3_wAKhH2mKKobrzj3nUJPI-WinRiqKJKsdmfJAdg/exec';
+
+    // 載入 Google 試算表資料
+    async function loadData() {
+        try {
+            const response = await fetch(SPREADSHEET_URL);
+            addressToNameDB = await response.json();
+            console.log("資料載入成功！", addressToNameDB);
+        } catch (error) {
+            console.error("載入資料時發生錯誤：", error);
+            alert("無法載入店家資料，請檢查網路連線或試算表設定。");
+        }
+    }
+    
+    // -------------------------------------------------------------------
+    // 2. 地圖初始化
+    // -------------------------------------------------------------------
+    
+    function initMap() {
+        const taipei = { lat: 25.033964, lng: 121.564468 };
+        
+        map = new google.maps.Map(document.getElementById("map"), {
+            zoom: 12,
+            center: taipei,
+        });
+        
+        geocoder = new google.maps.Geocoder();
+        
+        // 呼叫載入資料的函式
+        loadData();
+    }
+
+    // -------------------------------------------------------------------
+    // 3. 核心功能函式
+    // -------------------------------------------------------------------
+    
+function processAddresses() {
+    // 清除舊的標記點
+    for (let i = 0; i < markers.length; i++) {
+        markers[i].setMap(null);
+    }
+    markers = [];
+
+    const addressText = document.getElementById('address-input').value;
+    const addresses = addressText.split('\n').filter(addr => addr.trim() !== '');
+
+    if (addresses.length === 0) {
+        alert('請至少輸入一個地址！');
+        return;
+    }
+
+    const geocodePromises = addresses.map(address => geocodeAddress(address));
+
+    Promise.all(geocodePromises).then(() => {
+        if (markers.length > 0) {
+            const bounds = new google.maps.LatLngBounds();
+            markers.forEach(marker => {
+                bounds.extend(marker.getPosition());
+            });
+            map.fitBounds(bounds);
+        }
+    });
+}
+
+function geocodeAddress(address) {
+    return new Promise((resolve) => {
+        geocoder.geocode({ 'address': address }, (results, status) => {
+            const name = addressToNameDB[address] || '未知店家';
+            
+            if (status === 'OK') {
+                const location = results[0].geometry.location;
+
+                const marker = new google.maps.Marker({
+                    map: map,
+                    position: location,
+                    title: name
+                });
+
+                markers.push(marker);
+
+                const infoWindow = new google.maps.InfoWindow({
+                    content: `<strong>${name}</strong><br>${address}`
+                });
+
+                marker.addListener('click', () => {
+                    infoWindow.open(map, marker);
+                });
+            } else {
+                alert(`無法找到地址: ${address} (錯誤代碼: ${status})`);
+                console.error('地址轉換失敗:', address, '狀態:', status);
+            }
+            resolve();
+        });
+    });
+}
+</script>
+</body>
+</html>
